@@ -1,0 +1,507 @@
+repeat task.wait() until game:IsLoaded()
+
+local Players = game:GetService("Players")  
+local CoreGui = game:GetService("CoreGui")  
+local TweenService = game:GetService("TweenService")  
+local ReplicatedStorage = game:GetService("ReplicatedStorage")  
+local UserInputService = game:GetService("UserInputService")  
+local RunService = game:GetService("RunService")  
+local HttpService = game:GetService("HttpService")  
+local lp = Players.LocalPlayer  
+  
+-- Variables de configuration (Paramètres de base)  
+local config = {  
+    ResetOnBalloon = false,  
+    ResetOnJail = false,  
+    ResetOnTiny = false,  
+    AutoTpOnReset = false  
+}  
+  
+-- CONFIGURATION POSITION DE DESTINATION
+local pos2 = Vector3.new(-353.4053, -6.9626, 114.8761)  
+local speedBoostValue = 200 -- Vitesse modifiée à 200 selon ta demande
+local isBoosting = false
+local mover = nil
+
+-- SYSTÈME DE SAUVEGARDE DE CONFIGURATION  
+local FILE_NAME = "HugosScriptConfig.json"  
+  
+local function saveConfig()  
+    if writefile then  
+        local success, encoded = pcall(HttpService.JSONEncode, HttpService, config)  
+        if success then  
+            writefile(FILE_NAME, encoded)  
+        end  
+    end  
+end  
+  
+local function loadConfig()  
+    if readfile and isfile and isfile(FILE_NAME) then  
+        local success, decoded = pcall(function()  
+            return HttpService:JSONDecode(readfile(FILE_NAME))  
+        end)  
+        if success and type(decoded) == "table" then  
+            for k, v in pairs(decoded) do  
+                if config[k] ~= nil then  
+                    config[k] = v  
+                end  
+            end  
+        end  
+    end  
+end  
+  
+loadConfig() -- Charger la configuration enregistrée au lancement  
+  
+-- Système de déplacement stabilisé
+local function makeMover(char, root)      
+    if mover then mover:Destroy() end      
+    mover = Instance.new("Part")      
+    mover.Size = Vector3.new(5, 1, 5)  
+    mover.Transparency = 1      
+    mover.CanCollide = false      
+    mover.Anchored = false      
+    mover.Massless = true      
+    mover.Name = "giga_mover"      
+    mover.Parent = char      
+          
+    local w = Instance.new("Weld")      
+    w.Part0 = root      
+    w.Part1 = mover      
+    w.C0 = CFrame.new(0, -3, 0)      
+    w.Parent = mover      
+end      
+      
+local function stopMover(humanoid, root)      
+    isBoosting = false      
+    if mover then      
+        mover:Destroy()      
+        mover = nil      
+    end      
+    if humanoid then      
+        humanoid.WalkSpeed = 16      
+    end      
+    if root then      
+        root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)      
+    end      
+end
+
+-- Variables Personnage  
+local character, hrp, hum  
+local function setupCharacter(char)  
+    character = char  
+    hrp = character:WaitForChild("HumanoidRootPart")  
+    hum = character:WaitForChild("Humanoid")  
+      
+    -- GESTION AUTO TP ON RESET (Marche auto à 200 de vitesse au reset si activé)  
+    if config.AutoTpOnReset then  
+        task.spawn(function()  
+            task.wait(0.5)  
+            if hrp and hum then  
+                isBoosting = true
+                makeMover(character, hrp)
+                print("✅ Auto Walk on Reset appliqué à 200 de vitesse !")  
+            end  
+        end)  
+    end  
+end  
+if lp.Character then setupCharacter(lp.Character) end  
+lp.CharacterAdded:Connect(setupCharacter)  
+
+-- Boucle de déplacement automatique à 200
+RunService.Heartbeat:Connect(function()      
+    if not mover or not hum or not hrp or not isBoosting then return end      
+      
+    local currentPos = hrp.Position      
+    local targetPosFlattened = Vector3.new(pos2.X, currentPos.Y, pos2.Z)      
+    local diff = (targetPosFlattened - currentPos)      
+          
+    -- Zone d'arrêt calibrée à 3.5 studs pour éviter de dépasser la cible      
+    if diff.Magnitude > 3.5 then      
+        local dir = diff.Unit      
+        hum.WalkSpeed = speedBoostValue      
+        mover.Velocity = Vector3.new(dir.X * speedBoostValue, mover.Velocity.Y, dir.Z * speedBoostValue)      
+        hum:MoveTo(pos2)      
+    else      
+        stopMover(hum, hrp)      
+    end      
+end)
+
+lp.CharacterAdded:Connect(function(c)      
+    task.wait(0.5)  
+    stopMover(hum, hrp)      
+end)
+  
+-- Chercher le remote admin  
+local core = { remote = nil }  
+task.spawn(function()  
+    if not lp.Character then lp.CharacterAdded:Wait() end  
+    task.wait(1)  
+    local net = ReplicatedStorage:WaitForChild("Packages"):WaitForChild("Net")  
+    local ch = net:GetChildren()  
+    local idx, n2i = {}, {}  
+    for i, o in ipairs(ch) do  
+        idx[i] = o  
+        n2i[o.Name] = i   
+    end  
+    local a = n2i["RF/a0e78691-cb9b-4efc-ac08-9c06fea70059"]  
+    if a then   
+        local r = idx[a+1]  
+        if r then core.remote = r end   
+    end  
+end)  
+  
+-- Supprimer l'ancien GUI s'il existe  
+if CoreGui:FindFirstChild("GiantRagdollGui") then  
+    CoreGui.GiantRagdollGui:Destroy()  
+end  
+  
+-- Créer le ScreenGui principal  
+local SG = Instance.new("ScreenGui")  
+SG.Name = "GiantRagdollGui"  
+SG.ResetOnSpawn = false  
+SG.ZIndexBehavior = Enum.ZIndexBehavior.Global  
+SG.IgnoreGuiInset = true  
+SG.Parent = CoreGui  
+  
+-- Panel principal  
+local panel = Instance.new("Frame")  
+panel.Name = "MainPanel"  
+panel.Size = UDim2.new(0, 120, 0, 110)  
+panel.Position = UDim2.new(0.5, -60, 0.4, -55)  
+panel.BackgroundColor3 = Color3.fromRGB(0, 0, 0)  
+panel.BorderSizePixel = 0  
+panel.ClipsDescendants = true  
+panel.Parent = SG  
+  
+local corner = Instance.new("UICorner")  
+corner.CornerRadius = UDim.new(0, 8)  
+corner.Parent = panel  
+  
+local stroke = Instance.new("UIStroke")  
+stroke.Thickness = 1.5  
+stroke.Color = Color3.fromRGB(40, 40, 40)  
+stroke.Parent = panel  
+  
+-- TITRE  
+local titleLabel = Instance.new("TextLabel")  
+titleLabel.Name = "TitleLabel"  
+titleLabel.Size = UDim2.new(1, -30, 0, 20)  
+titleLabel.Position = UDim2.new(0, 6, 0, 3)  
+titleLabel.BackgroundTransparency = 1  
+titleLabel.Font = Enum.Font.GothamBlack  
+titleLabel.TextSize = 10  
+titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)  
+titleLabel.TextXAlignment = Enum.TextXAlignment.Left  
+titleLabel.Text = "HUGO’S SCRIPT"  
+titleLabel.ZIndex = 5  
+titleLabel.Parent = panel  
+  
+-- Bouton Paramètres ⚙️  
+local settingsBtn = Instance.new("TextButton")  
+settingsBtn.Size = UDim2.new(0, 18, 0, 18)  
+settingsBtn.Position = UDim2.new(1, -22, 0, 4)  
+settingsBtn.BackgroundTransparency = 1  
+settingsBtn.Font = Enum.Font.GothamBold  
+settingsBtn.TextSize = 12  
+settingsBtn.TextColor3 = Color3.fromRGB(200, 200, 200)  
+settingsBtn.Text = "⚙️"  
+settingsBtn.ZIndex = 5  
+settingsBtn.Parent = panel  
+  
+-- CONTENEUR PAGE PRINCIPALE  
+local mainPage = Instance.new("Frame")  
+mainPage.Name = "MainPage"  
+mainPage.Size = UDim2.new(1, 0, 1, 0)  
+mainPage.Position = UDim2.new(0, 0, 0, 0)  
+mainPage.BackgroundTransparency = 1  
+mainPage.ZIndex = 2  
+mainPage.Parent = panel  
+  
+local mainBtn = Instance.new("TextButton")  
+mainBtn.Size = UDim2.new(1, -12, 0, 40)  
+mainBtn.Position = UDim2.new(0, 6, 0, 24)  
+mainBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)  
+mainBtn.Font = Enum.Font.GothamBlack  
+mainBtn.TextSize = 14  
+mainBtn.TextColor3 = Color3.new(1, 1, 1)  
+mainBtn.Text = "UP+RUN"  
+mainBtn.Parent = mainPage  
+  
+local mainCorner = Instance.new("UICorner")  
+mainCorner.CornerRadius = UDim.new(0, 6)  
+mainCorner.Parent = mainBtn  
+  
+local resetBtn = Instance.new("TextButton")  
+resetBtn.Size = UDim2.new(1, -12, 0, 32)  
+resetBtn.Position = UDim2.new(0, 6, 0, 70)  
+resetBtn.BackgroundColor3 = Color3.fromRGB(35, 15, 15)  
+resetBtn.Font = Enum.Font.GothamBold  
+resetBtn.TextSize = 11  
+resetBtn.TextColor3 = Color3.fromRGB(255, 100, 100)  
+resetBtn.Text = "Respawn"  
+resetBtn.Parent = mainPage  
+  
+local resetCorner = Instance.new("UICorner")  
+resetCorner.CornerRadius = UDim.new(0, 6)  
+resetCorner.Parent = resetBtn  
+  
+-- CONTENEUR PAGE PARAMÈTRES  
+local settingsPage = Instance.new("Frame")  
+settingsPage.Name = "SettingsPage"  
+settingsPage.Size = UDim2.new(1, 0, 1, 0)  
+settingsPage.Position = UDim2.new(1, 0, 0, 0)  
+settingsPage.BackgroundTransparency = 1  
+settingsPage.ZIndex = 2  
+settingsPage.Parent = panel  
+  
+local listLayout = Instance.new("UIListLayout")  
+listLayout.Padding = UDim.new(0, 3)  
+listLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center  
+listLayout.SortOrder = Enum.SortOrder.LayoutOrder  
+listLayout.Parent = settingsPage  
+  
+local spacer = Instance.new("Frame")  
+spacer.Size = UDim2.new(1, 0, 0, 22)  
+spacer.BackgroundTransparency = 1  
+spacer.LayoutOrder = 1  
+spacer.Parent = settingsPage  
+  
+local function createOption(text, configKey, order)  
+    local btn = Instance.new("TextButton")  
+    btn.Size = UDim2.new(1, -10, 0, 18)  
+    btn.Font = Enum.Font.SourceSansBold  
+    btn.TextSize = 11  
+    btn.LayoutOrder = order  
+    btn.Parent = settingsPage  
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 4)  
+      
+    local function updateVisuals()  
+        local enabled = config[configKey]  
+        btn.Text = text .. ": " .. (enabled and "ON" or "OFF")  
+        btn.TextColor3 = enabled and Color3.fromRGB(0, 255, 120) or Color3.fromRGB(180, 180, 180)  
+        btn.BackgroundColor3 = enabled and Color3.fromRGB(20, 35, 25) or Color3.fromRGB(25, 25, 25)  
+    end  
+      
+    updateVisuals()  
+      
+    btn.MouseButton1Click:Connect(function()  
+        config[configKey] = not config[configKey]  
+        updateVisuals()  
+        saveConfig()  
+    end)  
+end  
+  
+createOption("Reset on Balloon", "ResetOnBalloon", 2)  
+createOption("Reset on Jail", "ResetOnJail", 3)  
+createOption("Reset on Tiny", "ResetOnTiny", 4)  
+createOption("Auto RUN on Reset", "AutoTpOnReset", 5)  
+  
+-- SCRIPT DRAGGABLE SYSTEM  
+local dragging, dragInput, dragStart, startPos  
+local function update(input)  
+    local delta = input.Position - dragStart  
+    panel.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)  
+end  
+  
+panel.InputBegan:Connect(function(input)  
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then  
+        dragging = true  
+        dragStart = input.Position  
+        startPos = panel.Position  
+        input.Changed:Connect(function()  
+            if input.UserInputState == Enum.UserInputState.End then dragging = false end  
+        end)  
+    end  
+end)  
+  
+panel.InputChanged:Connect(function(input)  
+    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then  
+        dragInput = input  
+    end  
+end)  
+  
+UserInputService.InputChanged:Connect(function(input)  
+    if input == dragInput and dragging then update(input) end  
+end)  
+  
+-- LOGIQUE DU FAST RESPAWN / RESET  
+local function doReset()  
+    stopMover(hum, hrp)
+    if hrp and hum then  
+        local backpack = lp:FindFirstChild("Backpack")  
+        local carpet = character:FindFirstChild("Flying Carpet") or character:FindFirstChild("Carpet")  
+        if not carpet and backpack then  
+            carpet = backpack:FindFirstChild("Flying Carpet") or backpack:FindFirstChild("Carpet")  
+            if carpet then hum:EquipTool(carpet) end  
+        end  
+          
+        local cam = workspace.CurrentCamera  
+        local oldCamCFrame = cam.CFrame  
+          
+        local connection  
+        connection = lp.CharacterAdded:Connect(function(newChar)  
+            local newHum = newChar:WaitForChild("Humanoid")  
+            task.wait(0.1)  
+            cam.CameraSubject = newHum  
+            cam.CameraType = Enum.CameraType.Custom  
+            if connection then connection:Disconnect() end  
+        end)  
+          
+        cam.CameraType = Enum.CameraType.Scriptable  
+        cam.CFrame = oldCamCFrame  
+          
+        for _, part in ipairs(character:GetDescendants()) do  
+            if part:IsA("BasePart") then  
+                part.CanCollide = false  
+            end  
+        end  
+          
+        if hum then hum.Health = 0 end  
+        hrp.Velocity = Vector3.new(0,0,0)  
+        hrp.CFrame = CFrame.new(0, 999999, 0)  
+        character:BreakJoints()  
+          
+        task.delay(6, function()  
+            if cam.CameraType == Enum.CameraType.Scriptable then  
+                cam.CameraType = Enum.CameraType.Custom  
+                if connection then connection:Disconnect() end  
+            end  
+        end)  
+    end  
+end  
+  
+-- CONFIGURATIONS ET LOGIQUE DU SEQUENCEUR  
+local moving = false  
+  
+local function equipCarpet()  
+    if not character or not hum then return end  
+    local tool = character:FindFirstChild("Flying Carpet") or lp.Backpack:FindFirstChild("Flying Carpet")  
+    if tool then hum:EquipTool(tool) end  
+end  
+  
+local function runFullSequence()  
+    if moving then return end  
+    moving = true  
+    mainBtn.Text = "UP.."  
+  
+    equipCarpet()  
+  
+    local duration = 0.5  
+    local upwardSpeed = 160  
+    local startTime = tick()  
+  
+    local connection  
+    connection = RunService.Heartbeat:Connect(function()  
+        if not hrp then return end  
+  
+        if tick() - startTime >= duration then  
+            connection:Disconnect()  
+  
+            -- Arret de la vélocité verticale avant de courir au sol
+            hrp.AssemblyLinearVelocity = Vector3.zero  
+            hrp.AssemblyAngularVelocity = Vector3.zero  
+              
+            mainBtn.Text = "RUNNING..."  
+            
+            -- Activation de la course automatique à 200 de vitesse
+            if hum and hrp then
+                isBoosting = true
+                makeMover(character, hrp)
+                -- Attendre que le personnage arrive à destination avant de continuer la suite
+                repeat task.wait() until isBoosting == false
+            end
+              
+            mainBtn.Text = "POTION..."  
+            task.wait(0.1)  
+  
+            -- Utilisation Potion  
+            local backpack = lp:FindFirstChild("Backpack")  
+            local giantTool = backpack and backpack:FindFirstChild("Giant Potion")  
+              
+            if giantTool then  
+                giantTool.Parent = character  
+                task.wait(0.2)  
+                giantTool:Activate()  
+                task.wait(0.4)  
+                giantTool.Parent = backpack  
+            end  
+  
+            -- Activation Ragdoll  
+            if core.remote then  
+                pcall(function()  
+                    core.remote:InvokeServer("f888ee6e-c86d-46e1-93d7-0639d6635d42", lp, "ragdoll")  
+                end)  
+            end  
+  
+            mainBtn.Text = "UP+RUN"  
+            moving = false  
+            return  
+        end  
+  
+        hrp.AssemblyLinearVelocity = Vector3.new(0, upwardSpeed, 0)  
+    end)  
+end  
+  
+-- INTERACTIONS & DÉCLENCHEURS INTERNES  
+mainBtn.MouseButton1Click:Connect(function()  
+    if moving then return end  
+    TweenService:Create(mainBtn, TweenInfo.new(0.05), {BackgroundColor3 = Color3.fromRGB(50, 50, 50)}):Play()  
+    runFullSequence()  
+    task.delay(0.05, function()  
+        TweenService:Create(mainBtn, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(20, 20, 20)}):Play()  
+    end)  
+end)  
+  
+resetBtn.MouseButton1Click:Connect(doReset)  
+  
+-- Système d'ouverture de l'onglet paramètres  
+local inSettings = false  
+settingsBtn.MouseButton1Click:Connect(function()  
+    inSettings = not inSettings  
+    TweenService:Create(settingsBtn, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Rotation = inSettings and 180 or 0}):Play()  
+      
+    local targetMainPos = inSettings and UDim2.new(-1, 0, 0, 0) or UDim2.new(0, 0, 0, 0)  
+    local targetSettingsPos = inSettings and UDim2.new(0, 0, 0, 0) or UDim2.new(1, 0, 0, 0)  
+      
+    TweenService:Create(mainPage, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Position = targetMainPos}):Play()  
+    TweenService:Create(settingsPage, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Position = targetSettingsPos}):Play()  
+end)  
+  
+-- Raccourci Touche R  
+UserInputService.InputBegan:Connect(function(input, gp)  
+    if gp then return end  
+    if input.KeyCode == Enum.KeyCode.R then  
+        doReset()  
+    end  
+end)  
+  
+-- SYSTÈME DE DÉTECTION AUTOMATIQUE (UI LABELS)  
+lp.PlayerGui.DescendantAdded:Connect(function(desc)  
+    if desc:IsA("TextLabel") then  
+        task.wait(0.1)  
+        local textLower = desc.Text:lower()  
+          
+        if config.ResetOnBalloon then  
+            if textLower:find("balloon") and (textLower:find("on you") or textLower:find("ran")) then  
+                doReset()  
+                return  
+            end  
+        end  
+          
+        if config.ResetOnJail then  
+            if textLower:find("jail") or textLower:find("prison") then  
+                doReset()  
+                return  
+            end  
+        end  
+          
+        if config.ResetOnTiny then  
+            if textLower:find("tiny") or textLower:find("petit") or textLower:find("shrunk") then  
+                doReset()  
+                return  
+            end  
+        end  
+    end  
+end)
+
+print("⚡ Vitesse de course réglée sur 200. Prêt !")
